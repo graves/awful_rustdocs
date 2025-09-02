@@ -1,7 +1,18 @@
 [package]
 name = "awful_rustdocs"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+# Metadata required by crates.io
+authors = ["Thomas Gentry <thomas@awfulsec.com>"]
+description = "Generate Rustdoc comments automatically using Awful Jade and a Nushell-based AST extractor."
+license = "CC0-1.0"
+repository = "https://github.com/graves/awful_rustdocs"
+homepage = "https://github.com/graves/awful_rustdocs"
+documentation = "https://docs.rs/awful_rustdocs"
+readme = "README.md"
+keywords = ["rustdoc", "documentation", "llm", "ast", "automation"]
+categories = ["development-tools", "build-utils"]
 
 [dependencies]
 anyhow = "1"
