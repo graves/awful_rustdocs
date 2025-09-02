@@ -1,7 +1,6 @@
 # Awful Rustdocs
 
 [![Crates.io](https://img.shields.io/crates/v/awful_rustdocs.svg)](https://crates.io/crates/awful_rustdocs)
-[![Docs.rs](https://docs.rs/awful_rustdocs/badge.svg)](https://docs.rs/awful_rustdocs)
 
 Awful Rustdocs is a CLI that generates or improves Rustdoc for your codebase by harvesting symbols with a tiny Nu (Nushell) script, enriching per-item context using ast-grep, and asking Awful Jade to draft concise, high-quality docs. It can write the docs back into your source files in the correct location while preserving attributes like #[derive(...)], #[serde(...)], etc.
 
