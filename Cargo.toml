@@ -12,7 +12,7 @@ homepage = "https://github.com/graves/awful_rustdocs"
 documentation = "https://docs.rs/awful_rustdocs"
 readme = "README.md"
 keywords = ["rustdoc", "documentation", "llm", "ast", "automation"]
-categories = ["development-tools", "build-utils"]
+categories = ["development-tools"]
 
 [dependencies]
 anyhow = "1"
