@@ -1,0 +1,19 @@
+[package]
+name = "awful_rustdocs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+camino = "1"
+clap = { version = "4", features = ["derive"] }
+itertools = "0.13"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"
+
+# Awful Jade client
+awful_aj = "0.3.6"
