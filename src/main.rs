@@ -1,10 +1,6 @@
 mod defaults;
 
-use crate::defaults::{
-    DEFAULT_CONFIG_YAML,
-    DEFAULT_RUSTDOC_FN_YAML,
-    DEFAULT_RUSTDOC_STRUCT_YAML,
-};
+use crate::defaults::{DEFAULT_CONFIG_YAML, DEFAULT_RUSTDOC_FN_YAML, DEFAULT_RUSTDOC_STRUCT_YAML};
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
@@ -30,7 +26,9 @@ use awful_aj::template::{self, ChatTemplate};
     name = "awful_rustdocs",
     about = "Generate rustdocs for functions and structs using Awful Jade + rust_ast.nu"
 )]
+/// Represents a CLI command structure with a subcommand.
 struct Cli {
+    /// The subcommand command, used to invoke the appropriate functionality.
     #[command(subcommand)]
     cmd: Command,
 }
@@ -51,6 +49,7 @@ enum Command {
     Run(GenerateOpts),
 }
 
+/// Options for configuring rustdoc generation in Awful Jade.
 #[derive(Debug, clap::Args)]
 struct GenerateOpts {
     /// Path to your rust_ast.nu (the Nu script you shared)
@@ -104,7 +103,29 @@ struct GenerateOpts {
 }
 
 // ------------------- Init helpers ----------------------------
-
+/// Returns the path to the application's config directory.
+///
+/// Parameters:
+/// - None
+///
+/// Returns:
+/// - A `PathBuf` representing the directory path.
+///
+/// Errors:
+/// - If `ProjectDirs::from` fails, an error is returned via `anyhow`.
+///
+/// Notes:
+/// - The resulting path is OS-specific and follows standard XDG standards.
+/// - On macOS, the directory is under `~/Library/Application Support/`.
+/// - On Linux, it's under `~/.config/`.
+/// - On Windows, it uses the %APPDATA% environment variable.
+///
+/// Examples:
+/// ```no_run
+/// let result = crate::config_root();
+/// assert!(result.is_ok());
+///
+/// ```
 fn config_root() -> Result<PathBuf> {
     // Resulting path like:
     // macOS: ~/Library/Application Support/com.awful-sec.awful_rustdocs
@@ -115,6 +136,34 @@ fn config_root() -> Result<PathBuf> {
     Ok(proj.config_dir().to_path_buf())
 }
 
+/// Write a file if it does not exist or is empty, unless `force` is true.
+///
+/// Parameters:
+/// - `path`: The file path to check and write.
+/// - `contents`: The string content to write into the file.
+/// - `force`: Whether to overwrite an existing file (default: false).
+///
+/// Returns:
+/// - `Ok(true)` if the file was written successfully, or
+///   `Ok(false)` if the file already exists and `force` is false.
+///
+/// Errors:
+/// - I/O errors when creating directories or writing the file,
+///   or `path` is invalid.
+///
+/// Notes:
+/// - If the directory of the file does not exist, it will be created.
+///   If the file exists and `force` is false, this function returns immediately.
+/// - The written data must be a valid UTF-8 string.
+///
+/// Examples:
+/// ```no_run
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let path = std::path::Path::new("example.txt");
+/// write_if_needed(path, "Hello, world!", false).unwrap();
+/// # Ok(()) }
+///
+/// ```
 fn write_if_needed(path: &std::path::Path, contents: &str, force: bool) -> Result<bool> {
     if path.exists() && !force {
         return Ok(false);
@@ -127,6 +176,44 @@ fn write_if_needed(path: &std::path::Path, contents: &str, force: bool) -> Resul
     Ok(true)
 }
 
+/// Initializes the configuration directory and writes default templates if needed.
+///
+/// Creates or updates configuration files in `config_root` if the `force` flag is set.
+/// On dry run, prints what would be done without performing actions.
+///
+/// Parameters:
+/// - `force`: If true, forces writing even if files already exist.
+/// - `dry_run`: If true, simulates the operation without writing to disk.
+///
+/// Returns:
+/// - `Ok(())` on success,
+/// - Error if any I/O operations fail.
+///
+/// Errors:
+/// - `ErrorKind::InvalidOperation` on dry run when output is required.
+///
+/// Safety:
+/// - The function could mutate the filesystem in a way that could lead to data loss if --force is passed.
+///
+/// Notes:
+/// - `write_if_needed` handles file writing logic, including checking for existing files.
+///
+/// Examples:
+/// ```no_run
+/// # #[cfg(not(dry-run))]
+/// fn example() -> Result<(), Box<dyn std::error::Error>> {
+///     let config = config_root()?;
+///     run_init(true, false)?;
+/// # Ok(())
+/// }
+///
+/// # #[cfg(dry-run)]
+/// fn example_dry_run() -> Result<(), Box<dyn std::error::Error>> {
+///     let config = config_root()?;
+///     run_init(true, true)?;
+/// # Ok(())
+/// }
+/// ```
 fn run_init(force: bool, dry_run: bool) -> Result<()> {
     let root = config_root()?;
     let cfg = root.join("rustdoc_config.yaml");
@@ -175,6 +262,7 @@ struct Span {
 struct Row {
     /// "fn", "struct", "field", etc.
     kind: String,
+    /// name of a code item (tokenized, with special tokens)",
     name: String,
     /// "fn", "struct", "field", etc."}
     #[serde(rename = "crate")]
@@ -302,6 +390,7 @@ struct FieldDocOut {
 struct StructDocResponse {
     /// The documentation text for the struct. It includes both the short summary above and the detailed explanation of what it represents.",
     struct_doc: String,
+    /// A list of field documentation objects. Each contains metadata and a description of a struct or variant field.
     fields: Vec<FieldDocOut>,
 }
 
@@ -548,24 +637,30 @@ async fn main() -> Result<()> {
             let cfg_path: String = if Path::new(&opts.config).is_absolute() {
                 opts.config.clone()
             } else {
-                config_root()?.join(&opts.config).to_string_lossy().into_owned()
+                config_root()?
+                    .join(&opts.config)
+                    .to_string_lossy()
+                    .into_owned()
             };
-    
+
             // Now load using the absolute path
-            let mut cfg: AwfulJadeConfig = load_config(&cfg_path)
-                .map_err(|e| anyhow::anyhow!("Failed to load Awful Jade config: {cfg_path}: {e}"))?;
-    
+            let mut cfg: AwfulJadeConfig = load_config(&cfg_path).map_err(|e| {
+                anyhow::anyhow!("Failed to load Awful Jade config: {cfg_path}: {e}")
+            })?;
+
             if let Some(name) = &opts.session {
-                cfg.ensure_conversation_and_config(name).await
+                cfg.ensure_conversation_and_config(name)
+                    .await
                     .map_err(|e| anyhow::anyhow!("ensure_conversation_and_config failed: {}", e))?;
             }
 
             // Load templates
-            let tpl_fn: ChatTemplate = template::load_template(&opts.fn_template)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!("Failed to load template '{}': {}", opts.fn_template, e)
-                })?;
+            let tpl_fn: ChatTemplate =
+                template::load_template(&opts.fn_template)
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to load template '{}': {}", opts.fn_template, e)
+                    })?;
             let tpl_struct: ChatTemplate = template::load_template(&opts.struct_template)
                 .await
                 .map_err(|e| {
@@ -580,7 +675,10 @@ async fn main() -> Result<()> {
             let targets: Vec<String> = if opts.targets.is_empty() {
                 vec![".".into()]
             } else {
-                opts.targets.iter().map(|p| p.as_str().to_string()).collect()
+                opts.targets
+                    .iter()
+                    .map(|p| p.as_str().to_string())
+                    .collect()
             };
 
             // Harvest all rows via Nushell
@@ -654,10 +752,8 @@ async fn main() -> Result<()> {
                             let end_b = item.span.end_byte.unwrap_or(u64::MAX);
 
                             if !opts.no_paths {
-                                let qpaths = qualified_paths_in_span(
-                                    &item.file, start_b, end_b,
-                                )
-                                .unwrap_or_default();
+                                let qpaths = qualified_paths_in_span(&item.file, start_b, end_b)
+                                    .unwrap_or_default();
                                 referenced_symbols.extend(qpaths.into_iter());
                             }
 
@@ -668,20 +764,13 @@ async fn main() -> Result<()> {
                                     .unwrap_or_default()
                             };
 
-                            let question = build_markdown_question(
-                                item,
-                                &referenced_symbols,
-                                &calls_in_span,
-                            );
+                            let question =
+                                build_markdown_question(item, &referenced_symbols, &calls_in_span);
 
                             let answer = api::ask(&cfg, question, &tpl_fn, None, None)
                                 .await
                                 .map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "LLM ask() failed for {}: {}",
-                                        item.fqpath,
-                                        e
-                                    )
+                                    anyhow::anyhow!("LLM ask() failed for {}: {}", item.fqpath, e)
                                 })?;
 
                             let llm_doc_block = sanitize_llm_doc(&answer);
@@ -732,26 +821,20 @@ async fn main() -> Result<()> {
                             let body_text = extract_lines(&file_src, body_lo, body_hi);
 
                             // 2) Gather functions that reference this struct
-                            let refs =
-                                referencing_functions(&item.name, &item.fqpath, &fn_rows);
+                            let refs = referencing_functions(&item.name, &item.fqpath, &fn_rows);
 
                             // 3) Build struct prompt (expects JSON)
-                            let question =
-                                build_struct_request_with_refs(item, &body_text, &refs);
+                            let question = build_struct_request_with_refs(item, &body_text, &refs);
 
                             let raw = api::ask(&cfg, question, &tpl_struct, None, None)
                                 .await
                                 .map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "LLM ask() failed for {}: {}",
-                                        item.fqpath,
-                                        e
-                                    )
+                                    anyhow::anyhow!("LLM ask() failed for {}: {}", item.fqpath, e)
                                 })?;
 
                             // 4) Parse JSON; if it fails, degrade to plain struct doc only
-                            let parsed: Result<StructDocResponse> =
-                                serde_json::from_str(&raw).map_err(|e| {
+                            let parsed: Result<StructDocResponse> = serde_json::from_str(&raw)
+                                .map_err(|e| {
                                     anyhow::anyhow!(
                                         "struct JSON parse failed for {}: {e}\nraw:\n{}",
                                         item.fqpath,
@@ -773,7 +856,10 @@ async fn main() -> Result<()> {
 
                             // 6) Map field names -> insertion points by scanning the actual struct body
                             let fields_in_file = extract_struct_fields_in_file(
-                                &file_src, body_lo, body_hi, &item.fqpath,
+                                &file_src,
+                                body_lo,
+                                body_hi,
+                                &item.fqpath,
                             );
                             let mut field_index: BTreeMap<
                                 String,
@@ -1964,8 +2050,19 @@ fn patch_files_with_docs(results: &[LlmDocResult], overwrite: bool) -> Result<()
                 }
             };
 
-            // Respect overwrite (when we detected an existing block to replace)
-            if !overwrite && ins_hi > ins_lo {
+            // Respect overwrite only if we're replacing an existing doc block.
+            // (Non-empty ranges can also be just whitespace that we intend to trim.)
+            let has_doc_block_in_range = {
+                let lines: Vec<&str> = original.lines().collect();
+                let lo = ins_lo.min(lines.len());
+                let hi = ins_hi.min(lines.len());
+                (lo..hi).any(|k| {
+                    let t = lines[k].trim_start();
+                    t.starts_with("///") || t.starts_with("#![doc") || t.starts_with("#[doc")
+                })
+            };
+
+            if !overwrite && has_doc_block_in_range {
                 skipped_existing_doc += 1;
                 continue;
             }
