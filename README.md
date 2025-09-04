@@ -6,6 +6,8 @@ Awful Rustdocs is a CLI that generates or improves Rustdocs for your codebase by
 
 It can write the docs back into your source files in the correct location while preserving attributes like `#[derive(...)]`, `#[serde(...)]`, etc.
 
+![Awful Rustdocs Demo](./demo.gif)
+
 It supports:
 - Functions (fn): full context (signature, callers, referenced symbols, calls-in-span).
 - Structs: short top-level struct summary (above attributes) plus inline field comments generated from the struct body and references in the codebase (via a LLMs that support Structured Output).
@@ -14,7 +16,7 @@ It supports:
 
 ## How it works
 
-1. Harvest items with rust-ast.nu
+1. **Harvest items with rust-ast.nu**
 
 You provide (or use the default) Nu script `rust_ast.nu` that emits a list of items (at least fn and struct) with fields like:
 - `kind` ("fn", "struct")
@@ -27,7 +29,7 @@ You provide (or use the default) Nu script `rust_ast.nu` that emits a list of it
 
 These rows are read by Awful Rustdoc and grouped per file.
 
-2. Augment context with [ast-grep](https://ast-grep.github.io/guide/quick-start.html)
+2. **Augment context with [ast-grep](https://ast-grep.github.io/guide/quick-start.html)**
 
 For functions (unless disabled):
 -  Call sites inside the function body (plain, qualified, method).
@@ -35,7 +37,7 @@ For functions (unless disabled):
 
 These additional hints help the LLM write better docs.
 
-3. Pick the right template
+3. **Pick the right template**
 
 Two templates are loaded from your Awful Jade template directory:
 - `--template` (default: `rustdoc_fn`): for functions
@@ -47,7 +49,7 @@ The struct template is expected to specify a `response_format` JSON schema. The 
 
 You have full control over wording and constraints in those templates.
 
-4. Ask Awful Jade
+4. **Ask Awful Jade**
 
 For each item:
 - Build a rich, markdown prompt with identity, existing docs, and context.
@@ -60,7 +62,7 @@ All model output is passed through sanitizers:
 - `strip_wrappers_and_fences_strict`: safely removes wrapper tokens (e.g., `ANSWER:`) only when they appear at line starts and outside fences; it won’t nuke inline code examples.
 - `sanitize_llm_doc`: converts any prose to strict `///` lines; trims double-blanks; balances fences; removes a leading empty `///` if present.
 
-5. Patch files safely
+5. **Patch files safely**
 
 For each edit, the patcher:
 - Finds the right insertion window:
@@ -71,48 +73,13 @@ For each edit, the patcher:
 - Applies all edits from the bottom up to avoid shifting line offsets.
 - Writes artifacts to `target/llm_rustdocs/docs.json`.
 
-### JSON schema for struct `response_format`.
-
-Your `--struct-template` should define a strict response_format similar to:
-```yaml
-response_format:
-  name: rustdoc_struct_v1
-  strict: true
-  description: Rust struct docs plus per-field inline docs.
-  schema:
-    type: object
-    properties:
-      doc:
-        type: string
-        description: A short 1–2 sentence struct summary. No headings, no lists. Pure prose.
-      fields:
-        type: array
-        description: Inline field docs. Ignored if field name not found in struct body.
-        items:
-          type: object
-          properties:
-            name:
-              type: string
-              description: Field identifier exactly as it appears in the struct.
-            doc:
-              type: string
-              description: The rustdoc content for this field (one or a few `///` lines of prose).
-          required: [name, doc]
-    required: [doc, fields]
-```
-Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
-- Return only JSON conforming to that schema (no prose).
-- Keep the struct summary short and field docs concise.
-- Avoid restating types unless it clarifies semantics (units, invariants, ranges).
-- Preserve exact field names.
-
 The program will:
 - Convert doc to a strict `///` block placed above any attribute lines that decorate the struct.
 - Insert each `fields[].doc` as `///` immediately above the corresponding field, with the field’s current indentation and preserving any field attributes below the doc.
 
 ## Installation
 
-Requirements:
+**Requirements:**
 - Rust (stable)
 - Nushell (nu) to run `rust-ast.nu`
 - `ast-grep` (CLI) for call/path discovery in functions
@@ -134,72 +101,45 @@ You’ll need:
 	- Windows: scoop install `ast-grep` or download release
 
 💡 Tip: Verify all dependecies are installed.
-```shell
+```nushell
 cargo --version
 nu --version
 ast-grep --version
 ```
 
-1. Install the CLI from crates.io
-```shell
+1. Install the CLI
+```nushell
 cargo install awful_rustdoc
 ```
-This will put the awful_rustdoc binary in `~/.cargo/bin` (ensure that’s on your `PATH`).
+This installs the awful_rustdoc binary into ~/.cargo/bin. Make sure that directory is on your PATH.
 
-2. Set up Awful Jade config & template directories
+2. **Initialize defaults**
 
-Your program resolves config and templates under the app config directory. Use these conventional locations:
-- macOS/Linux: `~/.config/awful_jade/`
+Run once to install the default config and templates into Awful Jade’s configuration directory:
+```nushell
+awful_rustdoc init
+```
+Use `--force` to overwrite existing files, or `--dry-run` to preview what would be written.
+
+By default, files are placed under the standard platform-specific config directory:
+- macOS: `~/Library/Application Support/com.awful-sec.aj/`
+- Linux: `~/.config/awful_jade/`
 - Windows: `%APPDATA%\awful_jade\`
 
-Create the folders (macOS/Linux shown—adapt paths on Windows):
-```shell
-mkdir -p ~/.config/awful_jade/templates
-```
-If you already have a config (e.g. `config.yaml`) for Awful Jade, place it at:
-- macOS/Linux: `~/.config/awful_jade/config.yaml`
-- Windows: `%APPDATA%\awful_jade\config.yaml`
+Do you want me to add a short table showing exactly which files (rustdoc_config.yaml, rustdoc_fn.yaml, rustdoc_struct.yaml) end up in those directories after init?
 
-3. Get the latest templates from `graves/awful_rustdocs`
-
-#### Option A: Git clone then copy
-
-# macOS/Linux
-```shell
-git clone https://github.com/graves/awful_rustdocs /tmp/awful_rustdocs
-cp -R /tmp/awful_rustdocs/templates/* ~/.config/awful_jade/templates/
-```
-#### Option B: Download specific files (example)
-
-If you only want the two defaults your program uses:
-- `rustdoc_fn.yaml`
-- `rustdoc_struct.yaml`
-
-```shell
-curl -L \
-  https://raw.githubusercontent.com/graves/awful_rustdocs/HEAD/templates/rustdoc_fn.yaml \
-  -o ~/.config/awful_jade/templates/rustdoc_fn.yaml
-
-curl -L \
-  https://raw.githubusercontent.com/graves/awful_rustdocs/HEAD/templates/rustdoc_struct.yaml \
-  -o ~/.config/awful_jade/templates/rustdoc_struct.yaml
-```
-These defaults match your flags `--template rustdoc_fn` and `--struct-template rustdoc_struct`. If you rename them, pass the new names via flags.
-
-4. Get `rust_ast.nu`.
+3. **Get `rust_ast.nu`**
 
 Your binary defaults to `--script rust_ast.nu` (looked up in the current working directory). Place it in your repo root or wherever you’ll run the command from.
-```shell
-curl -L \
-  https://raw.githubusercontent.com/graves/nu_rust_ast/HEAD/rust_ast.nu \
-  -o ./rust_ast.nu
+```nushell
+http get https://raw.githubusercontent.com/graves/nu_rust_ast/HEAD/rust_ast.nu | save rust_ast.nu
 ```
-_Or `git clone https://github.com/graves/nu_rust_ast` and copy rust_ast.nu from there._
+_Or `git clone https://github.com/graves/nu_rust_ast` and copy rust_ast.nu from there. I prefer to have it saved in my `$"($nu.data-dir)/scripts"` directory and sourced by `$nu.config-file` to use the functions it provides whenever I need them._
 
-5. Quick smoke test
+4. **Quick smoke test**
 
 From your project root (where rust_ast.nu now lives):
-```shell
+```nushell
 awful_rustdoc --limit 1
 ```
 You should see `target/llm_rustdocs/docs.json` produced. This confirms the harvesting pipeline and template loads are working. Nothing is written to your source files unless you add `--write`.
@@ -209,35 +149,35 @@ _If you hit any bumps, ping me with the error output and the snippet—you’ve 
 ## Command-line usage
 
 ```shell
-λ awful_rustdocs --help
-Generate rustdocs for functions and structs using Awful Jade + rust_ast.nu
+λ awful_rustdocs run --help
+(default) Generate rustdocs using current options
 
-Usage: awful_rustdocs [OPTIONS] [TARGETS]...
+Usage: awful_rustdocs run [OPTIONS] [TARGETS]...
 
 Arguments:
   [TARGETS]...  Paths (files/dirs) to analyze (default: ".")
 
 Options:
       --script <SCRIPT>
-          Path to your rust_ast.nu (the Nu script you shared)", [default: rust_ast.nu]
+          Path to your rust_ast.nu (the Nu script you shared) [default: rust_ast.nu]
       --write
-          Write docs directly into source files (prepending ///)",
+          Write docs directly into source files (prepending ///)
       --overwrite
-          Overwrite existing rustdoc if present (default: false; only fills missing)",
+          Overwrite existing rustdoc if present (default: false; only fills missing)
       --session <SESSION>
           Session name for Awful Jade; if set, enables memory/session DB
       --limit <LIMIT>
-          Limit the number of items processed (for testing)",
+          Limit the number of items processed (for testing)
       --no-calls
           Skip per-function ast-grep call-site analysis
       --no-paths
           Skip per-function qualified path analysis
       --fn-template <FN_TEMPLATE>
-          Template for functions (expects response_format JSON)", [default: rustdoc_fn]
+          Template for functions (expects response_format JSON) [default: rustdoc_fn]
       --struct-template <STRUCT_TEMPLATE>
-          Template for structs+fields (expects response_format JSON)", [default: rustdoc_struct]
+          Template for structs+fields (expects response_format JSON) [default: rustdoc_struct]
       --config <CONFIG>
-          Awful Jade config file name under the app config dir (e.g. "config.yaml") [default: config.yaml]
+          Awful Jade config file name under the app config dir (changed default to match the new init filename) [default: rustdoc_config.yaml]
       --only <SYMBOL>...
           Only generate docs for these symbols (case-sensitive)
   -h, --help
@@ -246,34 +186,34 @@ Options:
 
 ## Examples
 
-1. Dry-run over the whole repo (no file changes)
-```shell
+1. Dry-run over the whole repo (no file changes).
+```nushell
 awful_rustdoc
 ```
-Artifacts go to `target/llm_rustdocs/docs.json`.
+_Artifacts go to `target/llm_rustdocs/docs.json`._
 
 2. Write missing function docs for all Rust files to stdout, recursively, starting in `src/`.
-```shell
+```nushell
 awful_rustdoc src --write
 ```
 
 3. Overwrite all existing function docs.
-```shell
+```nushell
 awful_rustdoc --write --overwrite
 ```
 
 4. Document a single function by name (case-sensitive).
-```shell
+```nushell
 awful_rustdoc --only do_work --write
 ```
 
 5. Document a specific function by fully-qualified path.
-```shell
+```nushell
 awful_rustdoc --only my_crate::utils::do_work --write
 ```
 
 6. Document one struct and its fields only.
-```shell
+```nushell
 awful_rustdoc --only my_crate::types::Config --write
 ```
 
@@ -315,6 +255,41 @@ awful_rustdoc --only my_crate::types::Config --write
 - Struct template (`rustdoc_struct`):
   - Ask for concise prose and a `fields[]` array.
   - Ask it to return only JSON.
+
+### JSON schema for struct `response_format`.
+
+Your `--struct-template` should define a strict response_format similar to:
+```yaml
+response_format:
+  name: rustdoc_struct_v1
+  strict: true
+  description: Rust struct docs plus per-field inline docs.
+  schema:
+    type: object
+    properties:
+      doc:
+        type: string
+        description: A short 1–2 sentence struct summary. No headings, no lists. Pure prose.
+      fields:
+        type: array
+        description: Inline field docs. Ignored if field name not found in struct body.
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+              description: Field identifier exactly as it appears in the struct.
+            doc:
+              type: string
+              description: The rustdoc content for this field (one or a few `///` lines of prose).
+          required: [name, doc]
+    required: [doc, fields]
+```
+Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
+- Return only JSON conforming to that schema (no prose).
+- Keep the struct summary short and field docs concise.
+- Avoid restating types unless it clarifies semantics (units, invariants, ranges).
+- Preserve exact field names.
 
 ## Behavior that prevents mangling
 - Wrapper token stripping is only applied at line starts and outside fences, and is skipped if the payload already looks like a rustdoc block.

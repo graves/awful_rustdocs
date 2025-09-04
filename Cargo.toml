@@ -18,6 +18,7 @@ categories = ["development-tools"]
 anyhow = "1"
 camino = "1"
 clap = { version = "4", features = ["derive"] }
+directories = "5"
 itertools = "0.13"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

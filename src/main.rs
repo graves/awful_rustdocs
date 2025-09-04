@@ -1,13 +1,23 @@
+mod defaults;
+
+use crate::defaults::{
+    DEFAULT_CONFIG_YAML,
+    DEFAULT_RUSTDOC_FN_YAML,
+    DEFAULT_RUSTDOC_STRUCT_YAML,
+};
+
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, Subcommand};
+use directories::ProjectDirs;
 use itertools::Itertools;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command as ProcCommand, Stdio};
 use tempfile::NamedTempFile;
 
 // Awful Jade
@@ -20,9 +30,30 @@ use awful_aj::template::{self, ChatTemplate};
     name = "awful_rustdocs",
     about = "Generate rustdocs for functions and structs using Awful Jade + rust_ast.nu"
 )]
-/// The `Cli` struct represents command-line interface options for configuring and running Awful Jade. It provides settings to control documentation generation, analysis targets, session management, and other runtime parameters.
 struct Cli {
-    /// Path to your rust_ast.nu (the Nu script you shared)",
+    #[command(subcommand)]
+    cmd: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Initialize default config & templates in the OS config directory.
+    Init {
+        /// Overwrite files if they already exist.
+        #[arg(long, action=ArgAction::SetTrue)]
+        force: bool,
+        /// Print the paths that were (or would be) written.
+        #[arg(long, action=ArgAction::SetTrue)]
+        dry_run: bool,
+    },
+
+    /// (default) Generate rustdocs using current options.
+    Run(GenerateOpts),
+}
+
+#[derive(Debug, clap::Args)]
+struct GenerateOpts {
+    /// Path to your rust_ast.nu (the Nu script you shared)
     #[arg(long, default_value = "rust_ast.nu")]
     script: Utf8PathBuf,
 
@@ -30,11 +61,11 @@ struct Cli {
     #[arg()]
     targets: Vec<Utf8PathBuf>,
 
-    /// Write docs directly into source files (prepending ///)",
+    /// Write docs directly into source files (prepending ///)
     #[arg(long, action=ArgAction::SetTrue)]
     write: bool,
 
-    /// Overwrite existing rustdoc if present (default: false; only fills missing)",
+    /// Overwrite existing rustdoc if present (default: false; only fills missing)
     #[arg(long, action=ArgAction::SetTrue)]
     overwrite: bool,
 
@@ -42,7 +73,7 @@ struct Cli {
     #[arg(long)]
     session: Option<String>,
 
-    /// Limit the number of items processed (for testing)",
+    /// Limit the number of items processed (for testing)
     #[arg(long)]
     limit: Option<usize>,
 
@@ -54,21 +85,76 @@ struct Cli {
     #[arg(long, action=ArgAction::SetTrue)]
     no_paths: bool,
 
-    /// Template for functions (expects response_format JSON)",
+    /// Template for functions (expects response_format JSON)
     #[arg(long, default_value = "rustdoc_fn")]
     fn_template: String,
 
-    /// Template for structs+fields (expects response_format JSON)",
+    /// Template for structs+fields (expects response_format JSON)
     #[arg(long, default_value = "rustdoc_struct")]
     struct_template: String,
 
-    /// Awful Jade config file name under the app config dir (e.g. "config.yaml")
-    #[arg(long, default_value = "config.yaml")]
+    /// Awful Jade config file name under the app config dir
+    /// (changed default to match the new init filename)
+    #[arg(long, default_value = "rustdoc_config.yaml")]
     config: String,
 
     /// Only generate docs for these symbols (case-sensitive).
     #[arg(long = "only", value_delimiter = ',', value_name = "SYMBOL", num_args=1..)]
     only: Vec<String>,
+}
+
+// ------------------- Init helpers ----------------------------
+
+fn config_root() -> Result<PathBuf> {
+    // Resulting path like:
+    // macOS: ~/Library/Application Support/com.awful-sec.awful_rustdocs
+    // Linux: ~/.config/com.awful-sec/awful_rustdocs
+    // Windows: %APPDATA%\com.awful-sec\awful_rustdocs
+    let proj = ProjectDirs::from("com", "awful-sec", "aj")
+        .ok_or_else(|| anyhow::anyhow!("could not determine OS config directory"))?;
+    Ok(proj.config_dir().to_path_buf())
+}
+
+fn write_if_needed(path: &std::path::Path, contents: &str, force: bool) -> Result<bool> {
+    if path.exists() && !force {
+        return Ok(false);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut f = fs::File::create(path)?;
+    f.write_all(contents.as_bytes())?;
+    Ok(true)
+}
+
+fn run_init(force: bool, dry_run: bool) -> Result<()> {
+    let root = config_root()?;
+    let cfg = root.join("rustdoc_config.yaml");
+    let tpl_dir = root.join("templates");
+    let fn_tpl = tpl_dir.join("rustdoc_fn.yaml");
+    let struct_tpl = tpl_dir.join("rustdoc_struct.yaml");
+
+    if dry_run {
+        eprintln!("Would create:");
+        eprintln!("  {}", cfg.display());
+        eprintln!("  {}", fn_tpl.display());
+        eprintln!("  {}", struct_tpl.display());
+        return Ok(());
+    }
+
+    let w1 = write_if_needed(&cfg, DEFAULT_CONFIG_YAML, force)?;
+    let w2 = write_if_needed(&fn_tpl, DEFAULT_RUSTDOC_FN_YAML, force)?;
+    let w3 = write_if_needed(&struct_tpl, DEFAULT_RUSTDOC_STRUCT_YAML, force)?;
+
+    eprintln!("Config directory: {}", root.display());
+    eprintln!("{} {}", if w1 { "Wrote" } else { "Kept" }, cfg.display());
+    eprintln!("{} {}", if w2 { "Wrote" } else { "Kept" }, fn_tpl.display());
+    eprintln!(
+        "{} {}",
+        if w3 { "Wrote" } else { "Kept" },
+        struct_tpl.display()
+    );
+    Ok(())
 }
 
 /// A span of text with start and end positions in lines and bytes.
@@ -392,7 +478,7 @@ fn qualified_paths_in_span(file: &str, start_byte: u64, end_byte: u64) -> Result
 ///
 /// ```
 fn run_ast_grep_json(file: &str, pattern: &str) -> Result<Vec<SgRecord>> {
-    let output = Command::new("ast-grep")
+    let output = ProcCommand::new("ast-grep")
         .args([
             "run",
             "-l",
@@ -452,273 +538,312 @@ fn run_ast_grep_json(file: &str, pattern: &str) -> Result<Vec<SgRecord>> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Load Awful Jade config
-    let mut cfg: AwfulJadeConfig = load_config(&cli.config)
-        .map_err(|e| anyhow::anyhow!("Failed to load Awful Jade config: {}", e))?;
-    if let Some(name) = &cli.session {
-        cfg.ensure_conversation_and_config(name)
-            .await
-            .map_err(|e| anyhow::anyhow!("ensure_conversation_and_config failed: {}", e))?;
-    }
-
-    // Load templates
-    let tpl_fn: ChatTemplate = template::load_template(&cli.fn_template)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to load template '{}': {}", cli.fn_template, e))?;
-    let tpl_struct: ChatTemplate = template::load_template(&cli.struct_template)
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to load struct template '{}': {}",
-                cli.struct_template,
-                e
-            )
-        })?;
-
-    // Targets
-    let targets: Vec<String> = if cli.targets.is_empty() {
-        vec![".".into()]
-    } else {
-        cli.targets.iter().map(|p| p.as_str().to_string()).collect()
-    };
-
-    // Harvest all rows via Nushell
-    let rows = run_nushell_harvest(&cli.script, &targets).context("nu + rust_ast.nu failed")?;
-
-    // Index symbol names for heuristic reference matching
-    let all_symbol_names: BTreeSet<String> = rows
-        .iter()
-        .map(|r| r.name.clone())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    // Group items by file, honoring --only
-    let mut per_file: BTreeMap<String, Vec<Row>> = BTreeMap::new();
-    let want = |r: &Row| -> bool {
-        if cli.only.is_empty() {
-            return true;
+    match cli.cmd {
+        Command::Init { force, dry_run } => {
+            run_init(force, dry_run)?;
+            Ok(())
         }
-        cli.only.iter().any(|s| s == &r.name || s == &r.fqpath)
-    };
-    for r in rows
-        .iter()
-        .filter(|r| (r.kind == "fn" || r.kind == "struct") && want(r))
-    {
-        per_file.entry(r.file.clone()).or_default().push(r.clone());
-    }
-    for v in per_file.values_mut() {
-        v.sort_by_key(|r| (r.span.start_line.unwrap_or(0), r.fqpath.clone()));
-    }
-
-    if per_file.is_empty() && !cli.only.is_empty() {
-        eprintln!("No items matched --only filter: {}", cli.only.join(", "));
-    }
-
-    // Build an index of functions by file for struct reference analysis
-    let fn_rows: Vec<&Row> = rows.iter().filter(|r| r.kind == "fn").collect();
-
-    let mut all_results: Vec<LlmDocResult> = Vec::new();
-    let mut processed = 0usize;
-
-    'files: for (_file, items) in per_file.iter() {
-        for item in items {
-            if let Some(limit) = cli.limit {
-                if processed >= limit {
-                    break 'files;
-                }
-            }
-            processed += 1;
-
-            let had_existing_doc = item
-                .doc
-                .as_ref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-            if had_existing_doc && !cli.overwrite {
-                // skip already documented items unless overwrite
-                if item.kind != "struct" {
-                    continue;
-                }
-                // For structs we still want to allow field docs generation even if the struct had docs,
-                // but since we moved to single-LLM call for struct+fields, we proceed anyway.
+        Command::Run(opts) => {
+            // Load Awful Jade config (resolved by your loader under app config dir)
+            let cfg_path: String = if Path::new(&opts.config).is_absolute() {
+                opts.config.clone()
+            } else {
+                config_root()?.join(&opts.config).to_string_lossy().into_owned()
+            };
+    
+            // Now load using the absolute path
+            let mut cfg: AwfulJadeConfig = load_config(&cfg_path)
+                .map_err(|e| anyhow::anyhow!("Failed to load Awful Jade config: {cfg_path}: {e}"))?;
+    
+            if let Some(name) = &opts.session {
+                cfg.ensure_conversation_and_config(name).await
+                    .map_err(|e| anyhow::anyhow!("ensure_conversation_and_config failed: {}", e))?;
             }
 
-            match item.kind.as_str() {
-                "fn" => {
-                    // functions: same as before
-                    let mut referenced_symbols = referenced_symbols_in_body(
-                        item.body_text.as_deref().unwrap_or(""),
-                        &all_symbol_names,
-                    );
+            // Load templates
+            let tpl_fn: ChatTemplate = template::load_template(&opts.fn_template)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to load template '{}': {}", opts.fn_template, e)
+                })?;
+            let tpl_struct: ChatTemplate = template::load_template(&opts.struct_template)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to load struct template '{}': {}",
+                        opts.struct_template,
+                        e
+                    )
+                })?;
 
-                    let start_b = item.span.start_byte.unwrap_or(0);
-                    let end_b = item.span.end_byte.unwrap_or(u64::MAX);
+            // Targets
+            let targets: Vec<String> = if opts.targets.is_empty() {
+                vec![".".into()]
+            } else {
+                opts.targets.iter().map(|p| p.as_str().to_string()).collect()
+            };
 
-                    if !cli.no_paths {
-                        let qpaths =
-                            qualified_paths_in_span(&item.file, start_b, end_b).unwrap_or_default();
-                        referenced_symbols.extend(qpaths.into_iter());
-                    }
+            // Harvest all rows via Nushell
+            let rows =
+                run_nushell_harvest(&opts.script, &targets).context("nu + rust_ast.nu failed")?;
 
-                    let calls_in_span = if cli.no_calls {
-                        vec![]
-                    } else {
-                        calls_in_function_span(&item.file, start_b, end_b).unwrap_or_default()
-                    };
+            // Index symbol names for heuristic reference matching
+            let all_symbol_names: BTreeSet<String> = rows
+                .iter()
+                .map(|r| r.name.clone())
+                .filter(|s| !s.is_empty())
+                .collect();
 
-                    let question =
-                        build_markdown_question(item, &referenced_symbols, &calls_in_span);
-
-                    let answer = api::ask(&cfg, question, &tpl_fn, None, None)
-                        .await
-                        .map_err(|e| {
-                            anyhow::anyhow!("LLM ask() failed for {}: {}", item.fqpath, e)
-                        })?;
-
-                    let llm_doc_block = sanitize_llm_doc(&answer);
-
-                    all_results.push(LlmDocResult {
-                        kind: "fn".into(),
-                        fqpath: item.fqpath.clone(),
-                        file: item.file.clone(),
-                        start_line: item.span.start_line,
-                        end_line: item.span.end_line,
-                        signature: item.signature.clone(),
-                        callers: item.callers.clone().unwrap_or_default(),
-                        referenced_symbols,
-                        llm_doc: llm_doc_block,
-                        had_existing_doc,
-                    });
+            // Group items by file, honoring --only
+            let mut per_file: BTreeMap<String, Vec<Row>> = BTreeMap::new();
+            let want = |r: &Row| -> bool {
+                if opts.only.is_empty() {
+                    return true;
                 }
+                opts.only.iter().any(|s| s == &r.name || s == &r.fqpath)
+            };
+            for r in rows
+                .iter()
+                .filter(|r| (r.kind == "fn" || r.kind == "struct") && want(r))
+            {
+                per_file.entry(r.file.clone()).or_default().push(r.clone());
+            }
+            for v in per_file.values_mut() {
+                v.sort_by_key(|r| (r.span.start_line.unwrap_or(0), r.fqpath.clone()));
+            }
 
-                "struct" => {
-                    // --- Structs: single LLM call returns struct_doc + per-field docs ---
+            if per_file.is_empty() && !opts.only.is_empty() {
+                eprintln!("No items matched --only filter: {}", opts.only.join(", "));
+            }
 
-                    // 1) Find struct signature line and body block in the FILE SOURCE
-                    let file_src = fs::read_to_string(&item.file)
-                        .with_context(|| format!("reading {}", &item.file))?;
+            // Build an index of functions by file for struct reference analysis
+            let fn_rows: Vec<&Row> = rows.iter().filter(|r| r.kind == "fn").collect();
 
-                    let struct_sig0 = match find_struct_sig_line_near(
-                        &file_src,
-                        item.span.start_line.unwrap_or(1).saturating_sub(1) as usize,
-                    ) {
-                        Some(l) => l,
-                        None => {
-                            eprintln!("warn: could not locate struct sig for {}", item.fqpath);
+            let mut all_results: Vec<LlmDocResult> = Vec::new();
+            let mut processed = 0usize;
+
+            'files: for (_file, items) in per_file.iter() {
+                for item in items {
+                    if let Some(limit) = opts.limit {
+                        if processed >= limit {
+                            break 'files;
+                        }
+                    }
+                    processed += 1;
+
+                    let had_existing_doc = item
+                        .doc
+                        .as_ref()
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false);
+                    if had_existing_doc && !opts.overwrite {
+                        if item.kind != "struct" {
                             continue;
                         }
-                    };
-                    let (body_lo, body_hi) = match find_struct_body_block(&file_src, struct_sig0) {
-                        Some(p) => p,
-                        None => {
-                            eprintln!("warn: could not locate struct body for {}", item.fqpath);
-                            continue;
-                        }
-                    };
-                    let body_text = extract_lines(&file_src, body_lo, body_hi);
-
-                    // 2) Gather functions that reference this struct (simple name or fqpath)
-                    let refs = referencing_functions(&item.name, &item.fqpath, &fn_rows);
-
-                    // 3) Build struct prompt; response_format JSON dictates the output
-                    let question = build_struct_request_with_refs(item, &body_text, &refs);
-
-                    let raw = api::ask(&cfg, question, &tpl_struct, None, None)
-                        .await
-                        .map_err(|e| {
-                            anyhow::anyhow!("LLM ask() failed for {}: {}", item.fqpath, e)
-                        })?;
-
-                    // 4) Parse JSON; if it fails, degrade to plain struct doc only
-                    let parsed: Result<StructDocResponse> =
-                        serde_json::from_str(&raw).map_err(|e| {
-                            anyhow::anyhow!(
-                                "struct JSON parse failed for {}: {e}\nraw:\n{}",
-                                item.fqpath,
-                                raw
-                            )
-                        });
-
-                    let (struct_doc, field_docs): (String, Vec<FieldDocOut>) = match parsed {
-                        Ok(v) => (v.struct_doc, v.fields),
-                        Err(err) => {
-                            eprintln!("{err}");
-                            (raw, vec![]) // fallback: assume whole payload is struct doc
-                        }
-                    };
-
-                    // 5) Sanitize docs into `///` lines
-                    let struct_llm_doc = sanitize_llm_doc(&struct_doc);
-
-                    // 6) Map field names -> insertion points by scanning the actual struct body
-                    let fields_in_file =
-                        extract_struct_fields_in_file(&file_src, body_lo, body_hi, &item.fqpath);
-                    let mut field_index: BTreeMap<
-                        String,
-                        (usize /*insert_line0*/, String /*field_line_text*/),
-                    > = BTreeMap::new();
-                    for f in fields_in_file {
-                        field_index.insert(f.name, (f.insert_line0, f.field_line_text));
+                        // for structs we still proceed to allow field docs via single LLM call
                     }
 
-                    // 7) Push struct doc result (start_line is fine as span.start_line)
-                    all_results.push(LlmDocResult {
-                        kind: "struct".into(),
-                        fqpath: item.fqpath.clone(),
-                        file: item.file.clone(),
-                        start_line: item.span.start_line,
-                        end_line: item.span.end_line,
-                        signature: item.signature.clone(),
-                        callers: item.callers.clone().unwrap_or_default(),
-                        referenced_symbols: vec![],
-                        llm_doc: struct_llm_doc,
-                        had_existing_doc,
-                    });
-
-                    // 8) Push field doc results (using insertion line computed from file scan)
-                    for fd in field_docs {
-                        if let Some((insert0, field_line_text)) = field_index.get(&fd.name).cloned()
-                        {
-                            let doc_block = sanitize_llm_doc(&fd.doc);
-                            all_results.push(LlmDocResult {
-                                kind: "field".into(),
-                                fqpath: format!("{}::{}", item.fqpath, fd.name),
-                                file: item.file.clone(),
-                                start_line: Some((insert0 as u32) + 1), // exact insert point
-                                end_line: None,
-                                signature: field_line_text,
-                                callers: vec![],
-                                referenced_symbols: vec![],
-                                llm_doc: doc_block,
-                                had_existing_doc: false,
-                            });
-                        } else {
-                            eprintln!(
-                                "warn: field '{}' not found in {} — skipping doc",
-                                fd.name, item.fqpath
+                    match item.kind.as_str() {
+                        "fn" => {
+                            let mut referenced_symbols = referenced_symbols_in_body(
+                                item.body_text.as_deref().unwrap_or(""),
+                                &all_symbol_names,
                             );
+
+                            let start_b = item.span.start_byte.unwrap_or(0);
+                            let end_b = item.span.end_byte.unwrap_or(u64::MAX);
+
+                            if !opts.no_paths {
+                                let qpaths = qualified_paths_in_span(
+                                    &item.file, start_b, end_b,
+                                )
+                                .unwrap_or_default();
+                                referenced_symbols.extend(qpaths.into_iter());
+                            }
+
+                            let calls_in_span = if opts.no_calls {
+                                vec![]
+                            } else {
+                                calls_in_function_span(&item.file, start_b, end_b)
+                                    .unwrap_or_default()
+                            };
+
+                            let question = build_markdown_question(
+                                item,
+                                &referenced_symbols,
+                                &calls_in_span,
+                            );
+
+                            let answer = api::ask(&cfg, question, &tpl_fn, None, None)
+                                .await
+                                .map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "LLM ask() failed for {}: {}",
+                                        item.fqpath,
+                                        e
+                                    )
+                                })?;
+
+                            let llm_doc_block = sanitize_llm_doc(&answer);
+
+                            all_results.push(LlmDocResult {
+                                kind: "fn".into(),
+                                fqpath: item.fqpath.clone(),
+                                file: item.file.clone(),
+                                start_line: item.span.start_line,
+                                end_line: item.span.end_line,
+                                signature: item.signature.clone(),
+                                callers: item.callers.clone().unwrap_or_default(),
+                                referenced_symbols,
+                                llm_doc: llm_doc_block,
+                                had_existing_doc,
+                            });
                         }
+
+                        "struct" => {
+                            // 1) Find struct signature line and body block in the FILE SOURCE
+                            let file_src = fs::read_to_string(&item.file)
+                                .with_context(|| format!("reading {}", &item.file))?;
+
+                            let struct_sig0 = match find_struct_sig_line_near(
+                                &file_src,
+                                item.span.start_line.unwrap_or(1).saturating_sub(1) as usize,
+                            ) {
+                                Some(l) => l,
+                                None => {
+                                    eprintln!(
+                                        "warn: could not locate struct sig for {}",
+                                        item.fqpath
+                                    );
+                                    continue;
+                                }
+                            };
+                            let (body_lo, body_hi) =
+                                match find_struct_body_block(&file_src, struct_sig0) {
+                                    Some(p) => p,
+                                    None => {
+                                        eprintln!(
+                                            "warn: could not locate struct body for {}",
+                                            item.fqpath
+                                        );
+                                        continue;
+                                    }
+                                };
+                            let body_text = extract_lines(&file_src, body_lo, body_hi);
+
+                            // 2) Gather functions that reference this struct
+                            let refs =
+                                referencing_functions(&item.name, &item.fqpath, &fn_rows);
+
+                            // 3) Build struct prompt (expects JSON)
+                            let question =
+                                build_struct_request_with_refs(item, &body_text, &refs);
+
+                            let raw = api::ask(&cfg, question, &tpl_struct, None, None)
+                                .await
+                                .map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "LLM ask() failed for {}: {}",
+                                        item.fqpath,
+                                        e
+                                    )
+                                })?;
+
+                            // 4) Parse JSON; if it fails, degrade to plain struct doc only
+                            let parsed: Result<StructDocResponse> =
+                                serde_json::from_str(&raw).map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "struct JSON parse failed for {}: {e}\nraw:\n{}",
+                                        item.fqpath,
+                                        raw
+                                    )
+                                });
+
+                            let (struct_doc, field_docs): (String, Vec<FieldDocOut>) = match parsed
+                            {
+                                Ok(v) => (v.struct_doc, v.fields),
+                                Err(err) => {
+                                    eprintln!("{err}");
+                                    (raw, vec![]) // fallback: assume whole payload is struct doc
+                                }
+                            };
+
+                            // 5) Sanitize docs into `///` lines
+                            let struct_llm_doc = sanitize_llm_doc(&struct_doc);
+
+                            // 6) Map field names -> insertion points by scanning the actual struct body
+                            let fields_in_file = extract_struct_fields_in_file(
+                                &file_src, body_lo, body_hi, &item.fqpath,
+                            );
+                            let mut field_index: BTreeMap<
+                                String,
+                                (usize /*insert_line0*/, String /*field_line_text*/),
+                            > = BTreeMap::new();
+                            for f in fields_in_file {
+                                field_index.insert(f.name, (f.insert_line0, f.field_line_text));
+                            }
+
+                            // 7) Push struct doc result
+                            all_results.push(LlmDocResult {
+                                kind: "struct".into(),
+                                fqpath: item.fqpath.clone(),
+                                file: item.file.clone(),
+                                start_line: item.span.start_line,
+                                end_line: item.span.end_line,
+                                signature: item.signature.clone(),
+                                callers: item.callers.clone().unwrap_or_default(),
+                                referenced_symbols: vec![],
+                                llm_doc: struct_llm_doc,
+                                had_existing_doc,
+                            });
+
+                            // 8) Push field doc results
+                            for fd in field_docs {
+                                if let Some((insert0, field_line_text)) =
+                                    field_index.get(&fd.name).cloned()
+                                {
+                                    let doc_block = sanitize_llm_doc(&fd.doc);
+                                    all_results.push(LlmDocResult {
+                                        kind: "field".into(),
+                                        fqpath: format!("{}::{}", item.fqpath, fd.name),
+                                        file: item.file.clone(),
+                                        start_line: Some((insert0 as u32) + 1),
+                                        end_line: None,
+                                        signature: field_line_text,
+                                        callers: vec![],
+                                        referenced_symbols: vec![],
+                                        llm_doc: doc_block,
+                                        had_existing_doc: false,
+                                    });
+                                } else {
+                                    eprintln!(
+                                        "warn: field '{}' not found in {} — skipping doc",
+                                        fd.name, item.fqpath
+                                    );
+                                }
+                            }
+                        }
+
+                        _ => {}
                     }
                 }
-
-                _ => {}
             }
+
+            // Persist results
+            let out_dir = Utf8PathBuf::from("target/llm_rustdocs");
+            fs::create_dir_all(&out_dir)?;
+            let out_json = out_dir.join("docs.json");
+            fs::write(&out_json, serde_json::to_vec_pretty(&all_results)?)?;
+            eprintln!("Wrote {}", out_json);
+
+            // Patch source files
+            if opts.write {
+                patch_files_with_docs(&all_results, opts.overwrite)?;
+            }
+
+            Ok(())
         }
     }
-
-    // Persist results
-    let out_dir = Utf8PathBuf::from("target/llm_rustdocs");
-    fs::create_dir_all(&out_dir)?;
-    let out_json = out_dir.join("docs.json");
-    fs::write(&out_json, serde_json::to_vec_pretty(&all_results)?)?;
-    eprintln!("Wrote {}", out_json);
-
-    // Patch source files
-    if cli.write {
-        patch_files_with_docs(&all_results, cli.overwrite)?;
-    }
-
-    Ok(())
 }
 
 // ------------------- Prompt builders ---------------------------------------
@@ -1249,7 +1374,7 @@ fn run_nushell_harvest(script_path: &Utf8PathBuf, targets: &[String]) -> Result<
     content.push_str(")\n($rows | to json)\n");
     tmp.write_all(content.as_bytes())?;
 
-    let mut cmd = Command::new("nu");
+    let mut cmd = ProcCommand::new("nu");
     cmd.arg("--no-config-file")
         .arg(tmp.path())
         .stdout(Stdio::piped())
