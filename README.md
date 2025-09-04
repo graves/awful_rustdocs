@@ -2,19 +2,21 @@
 
 [![Crates.io](https://img.shields.io/crates/v/awful_rustdocs.svg)](https://crates.io/crates/awful_rustdocs)
 
-Awful Rustdocs is a CLI that generates or improves Rustdoc for your codebase by harvesting symbols with a tiny Nu (Nushell) script, enriching per-item context using ast-grep, and asking Awful Jade to draft concise, high-quality docs. It can write the docs back into your source files in the correct location while preserving attributes like #[derive(...)], #[serde(...)], etc.
+Awful Rustdocs is a CLI that generates or improves Rustdocs for your codebase by harvesting symbols with a `rust_ast.nu`, enriching per-item context using `ast-grep`, and asking Awful Jade to draft concise, high-quality docs. 
+
+It can write the docs back into your source files in the correct location while preserving attributes like `#[derive(...)]`, `#[serde(...)]`, etc.
 
 It supports:
 - Functions (fn): full context (signature, callers, referenced symbols, calls-in-span).
-- Structs: short top-level struct summary (above attributes) plus inline field comments generated from the struct body and references in the codebase (via a structured response_format).
-- Selective processing via --only (case-sensitive, matches simple name or fully qualified path).
-- Safe, idempotent insertion with --overwrite off by default.
+- Structs: short top-level struct summary (above attributes) plus inline field comments generated from the struct body and references in the codebase (via a LLMs that support Structured Output).
+- Selective processing via `--only` (case-sensitive, matches simple name or fully qualified path).
+- Safe, idempotent insertion with `--overwrite` off by default.
 
 ## How it works
 
 1. Harvest items with rust-ast.nu
 
-You provide (or use the default) Nu script rust_ast.nu that emits a list of items (at least fn and struct) with fields like:
+You provide (or use the default) Nu script `rust_ast.nu` that emits a list of items (at least fn and struct) with fields like:
 - `kind` ("fn", "struct")
 - `file`, `fqpath`, `name`, `visibility`
 - `signature` (the item line the user would see)
@@ -24,8 +26,6 @@ You provide (or use the default) Nu script rust_ast.nu that emits a list of item
 - `callers` (if your pipeline includes it)
 
 These rows are read by Awful Rustdoc and grouped per file.
-
-> Note: Field comments are not read from the Nu output. For structs, the tool asks the LLM once with the struct body and references and receives inline field docs in a structured payload (see below). The patcher then inserts a /// line immediately above each field, aligned to the field’s indentation and placed above any field attributes.
 
 2. Augment context with [ast-grep](https://ast-grep.github.io/guide/quick-start.html)
 
@@ -38,12 +38,12 @@ These additional hints help the LLM write better docs.
 3. Pick the right template
 
 Two templates are loaded from your Awful Jade template directory:
-- `--template` (default: rustdoc_fn): for functions
-- `--struct-template` (default: rustdoc_struct): for structs + fields
+- `--template` (default: `rustdoc_fn`): for functions
+- `--struct-template` (default: `rustdoc_struct`): for structs + fields
 
-The struct template is expected to specify a response_format JSON schema. The model returns structured JSON that contains:
+The struct template is expected to specify a `response_format` JSON schema. The model returns structured JSON that contains:
 - A doc for the struct (short summary, no sections).
-- A list of fields[] (name + rustdoc text) to be inserted inline.
+- A list of `fields[]` (name + rustdoc text) to be inserted inline.
 
 You have full control over wording and constraints in those templates.
 
@@ -51,27 +51,27 @@ You have full control over wording and constraints in those templates.
 
 For each item:
 - Build a rich, markdown prompt with identity, existing docs, and context.
-- For functions, the model returns a plain /// block.
-- For structs, the model returns JSON conforming to your response_format schema (see next section), from which the program extracts:
-- The top struct doc (converted into a strict /// block),
-- The per-field docs (each as a single /// line or short block).
+- For functions, the model returns a plain `///` block.
+- For structs, the model returns JSON conforming to your `response_format` schema (see next section), from which the program extracts:
+- The top struct doc (converted into a strict `///` block),
+- The per-field docs (each as a single `///` line or short block).
 
 All model output is passed through sanitizers:
-- `strip_wrappers_and_fences_strict`: safely removes wrapper tokens (e.g., ANSWER:) only when they appear at line starts and outside fences; it won’t nuke inline code examples.
-- `sanitize_llm_doc`: converts any prose to strict /// lines; trims double-blanks; balances fences; removes a leading empty /// if present.
+- `strip_wrappers_and_fences_strict`: safely removes wrapper tokens (e.g., `ANSWER:`) only when they appear at line starts and outside fences; it won’t nuke inline code examples.
+- `sanitize_llm_doc`: converts any prose to strict `///` lines; trims double-blanks; balances fences; removes a leading empty `///` if present.
 
 5. Patch files safely
 
 For each edit, the patcher:
 - Finds the right insertion window:
 - Functions: directly above the function signature (consumes an immediately preceding blank if present).
-- Structs: above attributes (e.g., #[derive], #[serde]) so the doc block sits at the very top, preserving the attribute group below.
+- Structs: above attributes (e.g., `#[derive]`, `#[serde]`) so the doc block sits at the very top, preserving the attribute group below.
 - Fields: immediately above the field, above any field attributes; aligned to field indentation.
-- Skips any item that already has docs unless --overwrite is set.
+- Skips any item that already has docs unless `--overwrite` is set.
 - Applies all edits from the bottom up to avoid shifting line offsets.
 - Writes artifacts to `target/llm_rustdocs/docs.json`.
 
-JSON schema for struct `response_format`
+### JSON schema for struct `response_format`.
 
 Your `--struct-template` should define a strict response_format similar to:
 ```yaml
@@ -100,22 +100,22 @@ response_format:
           required: [name, doc]
     required: [doc, fields]
 ```
-Your system / pre/post user messages should instruct the model to:
+Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
 - Return only JSON conforming to that schema (no prose).
 - Keep the struct summary short and field docs concise.
 - Avoid restating types unless it clarifies semantics (units, invariants, ranges).
 - Preserve exact field names.
 
 The program will:
-- Convert doc to a strict /// block placed above any attribute lines that decorate the struct.
-- Insert each fields[].doc as /// immediately above the corresponding field, with the field’s current indentation and preserving any field attributes below the doc.
+- Convert doc to a strict `///` block placed above any attribute lines that decorate the struct.
+- Insert each `fields[].doc` as `///` immediately above the corresponding field, with the field’s current indentation and preserving any field attributes below the doc.
 
 ## Installation
 
 Requirements:
 - Rust (stable)
 - Nushell (nu) to run `rust-ast.nu`
-- ast-grep (CLI) for call/path discovery in functions
+- `ast-grep` (CLI) for call/path discovery in functions
 - Awful Jade config & templates (see `--config`, `--template`, `--struct-template`)
 
 0. Prerequisites
@@ -128,12 +128,12 @@ You’ll need:
 	- macOS: `brew install nushell`
 	- Linux: `snap install nushell --classic` or `cargo install nu`
 	- Windows: `winget install nushell`
-- ast-grep (CLI)
+- `ast-grep` (CLI)
 	- macOS: `brew install ast-grep`
 	- Linux: download release from GitHub or cargo install `ast-grep-cli`
 	- Windows: scoop install `ast-grep` or download release
 
-Tip: Verify tools after install:
+💡 Tip: Verify all dependecies are installed.
 ```shell
 cargo --version
 nu --version
@@ -156,7 +156,7 @@ Create the folders (macOS/Linux shown—adapt paths on Windows):
 ```shell
 mkdir -p ~/.config/awful_jade/templates
 ```
-If you already have a config (e.g. config.yaml) for Awful Jade, place it at:
+If you already have a config (e.g. `config.yaml`) for Awful Jade, place it at:
 - macOS/Linux: `~/.config/awful_jade/config.yaml`
 - Windows: `%APPDATA%\awful_jade\config.yaml`
 
@@ -186,7 +186,7 @@ curl -L \
 ```
 These defaults match your flags `--template rustdoc_fn` and `--struct-template rustdoc_struct`. If you rename them, pass the new names via flags.
 
-4. Get `rust_ast.nu` from `graves/nu_rust_ast`
+4. Get `rust_ast.nu`.
 
 Your binary defaults to `--script rust_ast.nu` (looked up in the current working directory). Place it in your repo root or wherever you’ll run the command from.
 ```shell
@@ -194,7 +194,7 @@ curl -L \
   https://raw.githubusercontent.com/graves/nu_rust_ast/HEAD/rust_ast.nu \
   -o ./rust_ast.nu
 ```
-(Or `git clone https://github.com/graves/nu_rust_ast` and copy rust_ast.nu from there.)
+_Or `git clone https://github.com/graves/nu_rust_ast` and copy rust_ast.nu from there._
 
 5. Quick smoke test
 
@@ -202,8 +202,9 @@ From your project root (where rust_ast.nu now lives):
 ```shell
 awful_rustdoc --limit 1
 ```
-You should see `target/llm_rustdocs/docs.jso`n produced. This confirms the harvesting pipeline and template loads are working. Nothing is written to your source files unless you add --write.
-If you hit any bumps, ping me with the error output and the snippet—you’ve already got a solid pipeline, so it’s typically a small path/filename or template mismatch.
+You should see `target/llm_rustdocs/docs.json` produced. This confirms the harvesting pipeline and template loads are working. Nothing is written to your source files unless you add `--write`.
+
+_If you hit any bumps, ping me with the error output and the snippet—you’ve already got a solid pipeline, so it’s typically a problem with the templates or config._
 
 ## Command-line usage
 
@@ -249,61 +250,55 @@ Options:
 ```shell
 awful_rustdoc
 ```
-Artifacts go to t`arget/llm_rustdocs/docs.json`.
+Artifacts go to `target/llm_rustdocs/docs.json`.
 
-2. Write missing function docs across src/
+2. Write missing function docs for all Rust files to stdout, recursively, starting in `src/`.
 ```shell
 awful_rustdoc src --write
 ```
 
-3. Overwrite all existing function docs
+3. Overwrite all existing function docs.
 ```shell
 awful_rustdoc --write --overwrite
 ```
 
-4. Document a single function by name (case-sensitive)
+4. Document a single function by name (case-sensitive).
 ```shell
 awful_rustdoc --only do_work --write
 ```
 
-5. Document a specific function by fully-qualified path
+5. Document a specific function by fully-qualified path.
 ```shell
 awful_rustdoc --only my_crate::utils::do_work --write
 ```
 
-6. Document one struct and its fields only
+6. Document one struct and its fields only.
 ```shell
 awful_rustdoc --only my_crate::types::Config --write
 ```
 
-The tool will:
-- Ask the struct template for JSON (doc + fields[]),
-- Place the struct summary above its attributes,
-- Insert /// comments right above each field found in the body, aligned with the field’s indentation.
-
-
 ## Insertion rules & safety
-- Struct docs: Placed above the attribute block (#[derive], #[serde], …) so attributes remain directly attached to the struct item. One optional blank line may be kept above the attribute block for readability.
-- Field docs: Placed above the field, and above any field attributes. Indentation matches the field line so the comments are visually aligned.
-- Function docs: Inserted directly above the fn signature; if there’s a single blank line immediately above, it’s absorbed into the doc block.
-- Overwrite behavior:
-- With --overwrite off (default), items that already have docs are skipped.
-- With --overwrite on, only the existing doc lines are replaced; attributes remain intact.
-- Bottom-up edits: All edits per file are sorted by descending byte offset, so earlier patches don’t shift the spans of later ones.
+- **Struct docs**: Placed above the attribute block (`#[derive]`, `#[serde]`, …) so attributes remain directly attached to the struct item.
+- **Field docs**: Placed above the field, and above any field attributes. Indentation matches the field line so the comments are visually aligned.
+- **Function docs**: Inserted directly above the `fn` signature.
+- **Overwrite behavior**:
+  - Without `--overwrite` (default), items that already have docs are skipped.
+  - With `--overwrite`, the existing doc lines are replaced.
+- **Bottom-up edits**: All edits per file are sorted by descending byte offset, so earlier patches don’t shift the spans of later ones.
 
 ## Output artifacts
 - `target/llm_rustdocs/docs.json` — a structured dump of everything generated:
 ```json
 [
   {
-    "kind": "fn" | "struct",
+    "kind": "fn",
     "fqpath": "...",
     "file": "src/...rs",
     "start_line": 123,
     "end_line": 167,
     "signature": "pub fn ...",
-    "callers": [...],
-    "referenced_symbols": [...],
+    "callers": ["..."],
+    "referenced_symbols": ["..."],
     "llm_doc": "/// lines...\n/// ...",
     "had_existing_doc": false
   }
@@ -311,35 +306,32 @@ The tool will:
 ```
 
 ## Template tips
-- Function template (rustdoc_fn)
-Have -  assistant return only a /// block (no backticks, no prose outside). Encourage:
-- 1–2 sentence summary,
-- Optional sections: Parameters:, Returns:, Errors:, Safety:, Notes:, Examples:,
-- Doc-test friendly examples (no fenced code unless necessary),
-- Avoid leading empty ///.
-- Struct template (rustdoc_struct)
-Use t- response_format JSON schema shown above. In your instructions:
-- Provide the full struct body and a list of functions that use the struct (to help write the field docs).
-- Ask for concise prose (doc) and a fields[] array.
-- Tell the model not to duplicate the type, unless needed for semantics (units, invariants, ranges).
-- Ask it to return only JSON.
+- Function template (`rustdoc_fn`):
+  - Have assistant return only a `///` block (no backticks, no prose outside).
+  - 1–2 sentence summary.
+  - Optional sections: `Parameters:`, `Returns:`, `Errors:`, `Safety:`, `Notes:`, `Examples:`
+  - Doc-test friendly examples (no fenced code unless necessary).
+  - Avoid leading empty `///`.
+- Struct template (`rustdoc_struct`):
+  - Ask for concise prose and a `fields[]` array.
+  - Ask it to return only JSON.
 
 ## Behavior that prevents mangling
 - Wrapper token stripping is only applied at line starts and outside fences, and is skipped if the payload already looks like a rustdoc block.
-- Sanitization:
-- Collapses repeated blank lines into single ///,
-- Ensures every line starts with ///,
-- Removes a single leading blank /// if present,
-- Balances code fences (/// ```rust … `/// ```),
-- Leaves inline code alone.
+- **Sanitization**:
+  - Collapses repeated blank lines into single `///`.
+  - Ensures every line starts with `///`.
+  - Removes a single leading blank `///` if present.
+  - Balances code fences (`///` ` ```rust … ///`),
+  - Leaves inline code alone.
 
 ## Troubleshooting
-- Attributes were moved/removed:
+- **Attributes were moved/removed**:
 	- Struct and field patchers only target doc lines and are designed to leave `#[...]` blocks untouched. If you see attributes removed, verify your template didn’t emit attribute-like text and that you’re not running another formatter concurrently.
-- A single struct looks garbled:
-	-This usually means the model emitted stray characters or mixed prose when it should have returned only JSON (for structs). Tighten the response_format constraints and system rules; consider enabling strict: true.
-- No fields were commented:
-	- Ensure your struct template returns the fields[] array with exact field names as they appear in the code. The patcher only inserts for names it can find.
+- **A single struct looks garbled**:
+	- This usually means the model emitted stray characters or mixed prose when it should have returned only JSON (for structs). Tighten the `response_format` constraints and system rules; consider enabling `strict: true`.
+- **No fields were commented**:
+	- Ensure your struct template returns the `fields[]` array with exact field names as they appear in the code. The patcher only inserts for names it can find.
 - Function analysis is slow:
 	- Try -`-no-calls` and/or `--no-paths` to skip `ast-grep` passes.
 
