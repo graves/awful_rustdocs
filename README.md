@@ -4,7 +4,7 @@
 
 Awful Rustdocs is a CLI that generates or improves Rustdoc comments by harvesting symbols via rust_ast.nu, enriching each item with ast-grep context (callers, intra-body calls, qualified paths), and prompting Awful Jade to produce concise, high-quality docs. 
 
-It writes the results back to source at the correct locations while preserving attributes like #[derive(...)] and #[serde(...)].
+It writes the results back to source at the correct locations while preserving attributes like `#[derive(...)]` and `#[serde(...)]`.
 
 ![Awful Rustdocs Demo](./demo.gif)
 
