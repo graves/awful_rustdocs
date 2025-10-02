@@ -1,24 +1,34 @@
-# Awful Rustdocs
+# Awful Rustdocs 📜
 
 [![Crates.io](https://img.shields.io/crates/v/awful_rustdocs.svg)](https://crates.io/crates/awful_rustdocs)
 
-Awful Rustdocs is a CLI that generates or improves Rustdocs for your codebase by harvesting symbols with a `rust_ast.nu`, enriching per-item context using `ast-grep`, and asking Awful Jade to draft concise, high-quality docs. 
+Awful Rustdocs is a CLI that generates or improves Rustdoc comments by harvesting symbols via rust_ast.nu, enriching each item with ast-grep context (callers, intra-body calls, qualified paths), and prompting Awful Jade to produce concise, high-quality docs. 
 
-It can write the docs back into your source files in the correct location while preserving attributes like `#[derive(...)]`, `#[serde(...)]`, etc.
+It writes the results back to source at the correct locations while preserving attributes like #[derive(...)] and #[serde(...)].
 
 ![Awful Rustdocs Demo](./demo.gif)
 
 It supports:
-- Functions (fn): full context (signature, callers, referenced symbols, calls-in-span).
-- Structs: short top-level struct summary (above attributes) plus inline field comments generated from the struct body and references in the codebase (via a LLMs that support Structured Output).
-- Selective processing via `--only` (case-sensitive, matches simple name or fully qualified path).
-- Safe, idempotent insertion with `--overwrite` off by default.
+- **Functions**: signature, callers, referenced symbols, and calls within the function's span.
+- **Structs**: one-paragraph struct summary (inserted above attributes) plus inline field comments inferred from the struct body and code references (via LLMs with Structured Output).
+- **Selective processing**: `--only` matches simple names or fully qualified paths (case-sensitive).
+- **Safe, idempotent edits**: `--overwrite` is off by default.
 
-## How it works
+## 🏃🏻‍♀️‍➡️ Quickstart
 
-1. **Harvest items with rust-ast.nu**
+```nushell
+cargo install awful_rustdocs
+cd your-crate
+curl -L https://raw.githubusercontent.com/graves/nu_rust_ast/HEAD/rust_ast.nu -o rust_ast.nu
+awful_rustdocs init        # install default config & templates
+awful_rustdocs --limit 1   # smoke test (no writes)
+```
 
-You provide (or use the default) Nu script `rust_ast.nu` that emits a list of items (at least fn and struct) with fields like:
+## 🧑🏿‍🚀 How it works
+
+1. **Harvest items with rust_ast.nu**
+
+You provide (or use the default) Nu script [rust_ast.nu](https://github.com/graves/nu_rust_ast) that emits a list of items (at least `fn` and `struct`) with fields like:
 - `kind` ("fn", "struct")
 - `file`, `fqpath`, `name`, `visibility`
 - `signature` (the item line the user would see)
@@ -27,7 +37,7 @@ You provide (or use the default) Nu script `rust_ast.nu` that emits a list of it
 - `body_text` (item body where present)
 - `callers` (if your pipeline includes it)
 
-These rows are read by Awful Rustdoc and grouped per file.
+These rows are read by Awful Rustdocs and grouped per file.
 
 2. **Augment context with [ast-grep](https://ast-grep.github.io/guide/quick-start.html)**
 
@@ -35,9 +45,9 @@ For functions (unless disabled):
 -  Call sites inside the function body (plain, qualified, method).
 -  Qualified paths `(A::B, A::<T>::B, A::{...})` discovered by pattern queries.
 
-These additional hints help the LLM write better docs.
+_These additional hints help the LLM write better docs._
 
-3. **Pick the right template**
+3. **Pick the right [template](https://github.com/graves/awful_rustdocs?tab=readme-ov-file#template-tips)**
 
 Two templates are loaded from your Awful Jade template directory:
 - `--template` (default: `rustdoc_fn`): for functions
@@ -47,7 +57,7 @@ The struct template is expected to specify a `response_format` JSON schema. The 
 - A doc for the struct (short summary, no sections).
 - A list of `fields[]` (name + rustdoc text) to be inserted inline.
 
-You have full control over wording and constraints in those templates.
+_You have full control over wording and constraints in those templates._
 
 4. **Ask Awful Jade**
 
@@ -65,10 +75,10 @@ All model output is passed through sanitizers:
 5. **Patch files safely**
 
 For each edit, the patcher:
-- Finds the right insertion window:
-- Functions: directly above the function signature (consumes an immediately preceding blank if present).
-- Structs: above attributes (e.g., `#[derive]`, `#[serde]`) so the doc block sits at the very top, preserving the attribute group below.
-- Fields: immediately above the field, above any field attributes; aligned to field indentation.
+- Finds the right insertion window.
+-   Functions: directly above the function signature (consumes an immediately preceding blank if present).
+-   Structs: above attributes (e.g., `#[derive]`, `#[serde]`) so the doc block sits at the very top, preserving the attribute group below.
+-   Fields: immediately above the field, above any field attributes; aligned to field indentation.
 - Skips any item that already has docs unless `--overwrite` is set.
 - Applies all edits from the bottom up to avoid shifting line offsets.
 - Writes artifacts to `target/llm_rustdocs/docs.json`.
@@ -77,15 +87,15 @@ The program will:
 - Convert doc to a strict `///` block placed above any attribute lines that decorate the struct.
 - Insert each `fields[].doc` as `///` immediately above the corresponding field, with the field’s current indentation and preserving any field attributes below the doc.
 
-## Installation
+## 💾 Installation
 
 **Requirements:**
 - Rust (stable)
-- Nushell (nu) to run `rust-ast.nu`
+- Nushell (nu) to run `rust_ast.nu`
 - `ast-grep` (CLI) for call/path discovery in functions
 - Awful Jade config & templates (see `--config`, `--template`, `--struct-template`)
 
-0. Prerequisites
+0. **Prerequisites**
 
 You’ll need:
 - Rust & Cargo (stable)
@@ -99,8 +109,17 @@ You’ll need:
 	- macOS: `brew install ast-grep`
 	- Linux: download release from GitHub or cargo install `ast-grep-cli`
 	- Windows: scoop install `ast-grep` or download release
+- Python 3.11 and pytorch (Please consult the docs for your OS)
+  - `brew install miniconda`
+  - `conda create -n aj python=3.11`
+  - `conda activate aj`
+  - `pip install torch==2.4.0`
+- Add the following to your shell initialization:
+  - `export LIBTORCH_USE_PYTORCH=1`
+  - `export LIBTORCH='/opt/homebrew/Caskroom/miniconda/base/pkgs/pytorch-2.4.0-py3.11_0/lib/python3.11/site-packages/torch'`
+  - `export DYLD_LIBRARY_PATH="$LIBTORCH/lib"`
 
-💡 Tip: Verify all dependecies are installed.
+💡 Tip: Verify all dependencies are installed.
 ```nushell
 cargo --version
 nu --version
@@ -109,15 +128,15 @@ ast-grep --version
 
 1. Install the CLI
 ```nushell
-cargo install awful_rustdoc
+cargo install awful_rustdocs
 ```
-This installs the awful_rustdoc binary into ~/.cargo/bin. Make sure that directory is on your PATH.
+This installs the awful_rustdocs binary into ~/.cargo/bin. Make sure that directory is on your PATH.
 
 2. **Initialize defaults**
 
 Run once to install the default config and templates into Awful Jade’s configuration directory:
 ```nushell
-awful_rustdoc init
+awful_rustdocs init
 ```
 Use `--force` to overwrite existing files, or `--dry-run` to preview what would be written.
 
@@ -138,18 +157,20 @@ _Or `git clone https://github.com/graves/nu_rust_ast` and copy rust_ast.nu from 
 
 4. **Quick smoke test**
 
-From your project root (where rust_ast.nu now lives):
+From your project root:
 ```nushell
-awful_rustdoc --limit 1
+awful_rustdocs --limit 1
 ```
 You should see `target/llm_rustdocs/docs.json` produced. This confirms the harvesting pipeline and template loads are working. Nothing is written to your source files unless you add `--write`.
 
 _If you hit any bumps, ping me with the error output and the snippet—you’ve already got a solid pipeline, so it’s typically a problem with the templates or config._
 
-## Command-line usage
+## 💻 Command-line usage
 
-```shell
+```nushell
 λ awful_rustdocs run --help
+```
+```
 (default) Generate rustdocs using current options
 
 Usage: awful_rustdocs run [OPTIONS] [TARGETS]...
@@ -184,41 +205,41 @@ Options:
           Print help
 ```
 
-## Examples
+## 🤸🏼 Examples
 
 1. Dry-run over the whole repo (no file changes).
 ```nushell
-awful_rustdoc
+awful_rustdocs
 ```
 _Artifacts go to `target/llm_rustdocs/docs.json`._
 
 2. Write missing function docs for all Rust files to stdout, recursively, starting in `src/`.
 ```nushell
-awful_rustdoc src --write
+awful_rustdocs src --write
 ```
 
 3. Overwrite all existing function docs.
 ```nushell
-awful_rustdoc --write --overwrite
+awful_rustdocs --write --overwrite
 ```
 
 4. Document a single function by name (case-sensitive).
 ```nushell
-awful_rustdoc --only do_work --write
+awful_rustdocs --only do_work --write
 ```
 
 5. Document a specific function by fully-qualified path.
 ```nushell
-awful_rustdoc --only my_crate::utils::do_work --write
+awful_rustdocs --only my_crate::utils::do_work --write
 ```
 
 6. Document one struct and its fields only.
 ```nushell
-awful_rustdoc --only my_crate::types::Config --write
+awful_rustdocs --only my_crate::types::Config --write
 ```
 
-## Insertion rules & safety
-- **Struct docs**: Placed above the attribute block (`#[derive]`, `#[serde]`, …) so attributes remain directly attached to the struct item.
+## ⚠️ Insertion rules & safety
+- **Struct docs**: Placed above the attribute block (`#[derive]`, `#[serde]`, etc) so attributes remain directly attached to the struct item.
 - **Field docs**: Placed above the field, and above any field attributes. Indentation matches the field line so the comments are visually aligned.
 - **Function docs**: Inserted directly above the `fn` signature.
 - **Overwrite behavior**:
@@ -226,7 +247,7 @@ awful_rustdoc --only my_crate::types::Config --write
   - With `--overwrite`, the existing doc lines are replaced.
 - **Bottom-up edits**: All edits per file are sorted by descending byte offset, so earlier patches don’t shift the spans of later ones.
 
-## Output artifacts
+## 🤖 Output artifacts
 - `target/llm_rustdocs/docs.json` — a structured dump of everything generated:
 ```json
 [
@@ -245,14 +266,14 @@ awful_rustdoc --only my_crate::types::Config --write
 ]
 ```
 
-## Template tips
-- Function template (`rustdoc_fn`):
+## 💡 Template tips
+- **Function template** (`rustdoc_fn.yaml`):
   - Have assistant return only a `///` block (no backticks, no prose outside).
   - 1–2 sentence summary.
   - Optional sections: `Parameters:`, `Returns:`, `Errors:`, `Safety:`, `Notes:`, `Examples:`
   - Doc-test friendly examples (no fenced code unless necessary).
   - Avoid leading empty `///`.
-- Struct template (`rustdoc_struct`):
+- **Struct template** (`rustdoc_struct.yaml`):
   - Ask for concise prose and a `fields[]` array.
   - Ask it to return only JSON.
 
@@ -291,7 +312,7 @@ Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
 - Avoid restating types unless it clarifies semantics (units, invariants, ranges).
 - Preserve exact field names.
 
-## Behavior that prevents mangling
+## 🧯 Behavior that prevents mangling
 - Wrapper token stripping is only applied at line starts and outside fences, and is skipped if the payload already looks like a rustdoc block.
 - **Sanitization**:
   - Collapses repeated blank lines into single `///`.
@@ -300,7 +321,7 @@ Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
   - Balances code fences (`///` ` ```rust … ///`),
   - Leaves inline code alone.
 
-## Troubleshooting
+## 😣 Troubleshooting
 - **Attributes were moved/removed**:
 	- Struct and field patchers only target doc lines and are designed to leave `#[...]` blocks untouched. If you see attributes removed, verify your template didn’t emit attribute-like text and that you’re not running another formatter concurrently.
 - **A single struct looks garbled**:
@@ -310,11 +331,11 @@ Your `system_prompt`, `pre`, `post` user messages should instruct the model to:
 - Function analysis is slow:
 	- Try -`-no-calls` and/or `--no-paths` to skip `ast-grep` passes.
 
-## Limitations
+## 🪜 Limitations
 - The tool assumes reasonably idiomatic Rust formatting for matching signatures and fields.
 - Exotic macro-expanded items may not be discoverable or patchable.
 - The field matcher is heuristic; very complex multi-line field definitions may require tweaks.
 
-## License
+## 🪪 License
 
 CC0-1.0
