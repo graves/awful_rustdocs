@@ -145,8 +145,6 @@ By default, files are placed under the standard platform-specific config directo
 - Linux: `~/.config/awful_jade/`
 - Windows: `%APPDATA%\awful_jade\`
 
-Do you want me to add a short table showing exactly which files (rustdoc_config.yaml, rustdoc_fn.yaml, rustdoc_struct.yaml) end up in those directories after init?
-
 3. **Get `rust_ast.nu`**
 
 Your binary defaults to `--script rust_ast.nu` (looked up in the current working directory). Place it in your repo root or wherever you’ll run the command from.
