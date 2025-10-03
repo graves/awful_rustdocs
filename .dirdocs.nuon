@@ -1,0 +1,122 @@
+{
+  "root": ".",
+  "updated_at": "2025-10-03T18:36:05.742096Z",
+  "entries": [
+    {
+      "kind": "file",
+      "name": "Cargo.toml",
+      "path": "Cargo.toml",
+      "hash": "f9c377f7d99e0aea1785610772178b08962cb54d49ff5652d83266fde48d2629",
+      "updated_at": "2025-10-03T18:33:24.243829Z",
+      "doc": {
+        "fileDescription": "Configures the awful_rustdocs project for Rust documentation generation.",
+        "joyThisFileBrings": 7,
+        "personalityEmoji": "📦"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "Justfile",
+      "path": "Justfile",
+      "hash": "23f7d4c497a16bacc604864b3459dda989e81cc17d4cd13aa4992c895f6f8bb7",
+      "updated_at": "2025-10-03T18:34:02.365558Z",
+      "doc": {
+        "fileDescription": "Documents the project's configuration and initialization steps for the Rust documentation tool.",
+        "joyThisFileBrings": 7,
+        "personalityEmoji": "📝"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "README.md",
+      "path": "README.md",
+      "hash": "6c2e948f3ff2930da930ed1ee9008262a1b61217bd91e76eb6726948decfcd3c",
+      "updated_at": "2025-10-03T18:34:59.188081Z",
+      "doc": {
+        "fileDescription": "Documentation for the Awful Rustdocs CLI tool, detailing its features, installation steps, and usage instructions.",
+        "joyThisFileBrings": 9,
+        "personalityEmoji": "🚀"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "LICENSE",
+      "path": "LICENSE",
+      "hash": "b7a6a1ef44aa3647db780392b4fa023c613fd9fa482678bb7a729e5fe385ca00",
+      "updated_at": "2025-10-03T18:33:40.646303Z",
+      "doc": {
+        "fileDescription": "A CC0 license for the Rustdocs project, granting unlimited rights under public domain.",
+        "joyThisFileBrings": 8,
+        "personalityEmoji": "⚖️"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "demo.gif",
+      "path": "demo.gif",
+      "hash": "d33a0b00676a6aeae9d0b71435656eeae8e17333489b5e5c524fd3f8c3eeb072",
+      "updated_at": "2025-10-03T18:35:16.442727Z",
+      "doc": {
+        "fileDescription": "Demonstrates a functional CLI tool for generating high-quality Rustdoc comments.",
+        "joyThisFileBrings": 7,
+        "personalityEmoji": "🦀"
+      }
+    },
+    {
+      "kind": "file",
+      "name": "config.yaml",
+      "path": "config.yaml",
+      "hash": "a13c9e22eef9eef944ea7366389626e32fadc2e3cd1ab2d90134449bd19b1af1",
+      "updated_at": "2025-10-03T18:34:18.518840Z",
+      "doc": {
+        "fileDescription": "Configures the API settings and database connection for the Awful Rustdocs tool.",
+        "joyThisFileBrings": 8,
+        "personalityEmoji": "⚙️"
+      }
+    },
+    {
+      "kind": "dir",
+      "name": "src",
+      "path": "src",
+      "updated_at": "2025-10-03T18:36:05.742142Z",
+      "entries": [
+        {
+          "kind": "file",
+          "name": "main.rs",
+          "path": "src/main.rs",
+          "hash": "cdbb6cde2b7aeabc015aeb9e009fa06223915e91d77832297cbe838ad0941b65",
+          "updated_at": "2025-10-03T18:35:30.499566Z",
+          "doc": {
+            "fileDescription": "Generates and improves Rustdoc comments using Awful Jade and rust_ast.nu.",
+            "joyThisFileBrings": 8,
+            "personalityEmoji": "🤖"
+          }
+        },
+        {
+          "kind": "file",
+          "name": "defaults.rs",
+          "path": "src/defaults.rs",
+          "hash": "f2d1409dc00701dcdcc9ffbf944fc0e6e73bc7bcb319fc1831252d1bf74f726c",
+          "updated_at": "2025-10-03T18:35:49.534529Z",
+          "doc": {
+            "fileDescription": "Configures default settings for the Awful Rustdocs tool.",
+            "joyThisFileBrings": 8,
+            "personalityEmoji": "⚙️"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "file",
+      "name": "Cargo.lock",
+      "path": "Cargo.lock",
+      "hash": "aa76cb8cae44701aa4a4419448db80742c452a1cc7babbf5ef712a813b1007de",
+      "updated_at": "2025-10-03T18:34:35.729201Z",
+      "doc": {
+        "fileDescription": "A Cargo lock file that tracks dependencies and their versions for the project.",
+        "joyThisFileBrings": 6,
+        "personalityEmoji": "📦"
+      }
+    }
+  ]
+}
