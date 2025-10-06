@@ -264,17 +264,12 @@ dependencies = [
 name = "awful_rustdocs"
 version = "0.2.2"
 dependencies = [
- "anyhow",
  "awful_aj",
- "camino",
  "clap",
  "directories 5.0.1",
- "itertools 0.13.0",
  "regex",
  "serde",
  "serde_json",
- "tempfile",
- "thiserror 1.0.69",
  "tokio",
 ]
 
@@ -449,12 +444,6 @@ dependencies = [
  "thiserror 1.0.69",
  "zip 0.6.6",
 ]
-
-[[package]]
-name = "camino"
-version = "1.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd0b03af37dad7a14518b7691d81acb0f8222604ad3d1b02f6b4bed5188c0cd5"
 
 [[package]]
 name = "cc"
@@ -1868,15 +1857,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2808,7 +2788,7 @@ checksum = "19599f60a688b5160247ee9c37a6af8b0c742ee8b160c5b44acc0f0eb265a59f"
 dependencies = [
  "csv",
  "hashbrown 0.14.5",
- "itertools 0.11.0",
+ "itertools",
  "lazy_static",
  "protobuf",
  "rayon",
