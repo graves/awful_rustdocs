@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "awful_rustdocs"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "awful_aj",
  "clap",

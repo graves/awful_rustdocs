@@ -1,6 +1,6 @@
 [package]
 name = "awful_rustdocs"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 
 # Metadata required by crates.io
