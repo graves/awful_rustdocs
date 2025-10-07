@@ -24,3 +24,5 @@ tokio = { version = "1", features = ["full"] }
 
 # Awful Jade client
 awful_aj = "0.3.6"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

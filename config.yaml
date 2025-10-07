@@ -3,11 +3,11 @@ api_base: http://192.168.1.177:1234/v1
 model: Qwen/Qwen3-30B-A3B-2507
 context_max_tokens: 31768
 assistant_minimum_context_tokens: 8192
-should_stream: true
+should_stream: false
 stop_words:
 - |2-
 
   <|im_start|>
 - <|im_end|>
-session_db_url: "/Users/tg/Library/Application Support/com.awful-sec.aj/aj.db"
+session_db_url: ""
 session_name: default
